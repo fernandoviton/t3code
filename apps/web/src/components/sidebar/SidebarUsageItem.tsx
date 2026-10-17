@@ -5,11 +5,18 @@ import { useEffect, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
-import { formatRelativeTimeLabel, formatUpcomingTimestamp } from "../../timestampFormat";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
+import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PROVIDER_PRESENTATION } from "../usage/usageProviders";
-import { selectClaudeUsageRings, USAGE_RING_WARN_PERCENT } from "./sidebarUsageRings.logic";
+import {
+  claudeUsageRefreshTargets,
+  selectClaudeUsageRings,
+  USAGE_RING_WARN_PERCENT,
+} from "./sidebarUsageRings.logic";
 
 const SESSION_COLOR = PROVIDER_PRESENTATION.claude.color;
 const WEEKLY_COLOR = PROVIDER_PRESENTATION.opencode.color;
@@ -91,6 +98,10 @@ function LegendRow({
 
 const MINUTE = 60_000;
 
+// When each Claude instance was last asked to re-read usage. In memory only,
+// shared across mounts so remounting the sidebar does not re-probe.
+const lastUsageRefreshAt = new Map<string, number>();
+
 function useMinuteClock(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -102,9 +113,11 @@ function useMinuteClock(): number {
 
 /**
  * The footer's Usage button. With Claude limits reported it draws two rings,
- * session outside and weekly inside, and hovering lists both with their
- * freshness; the popup is the whole view, so clicking does nothing. Without
- * them it is the plain chart icon that opens the Usage page.
+ * session outside and weekly inside, and hovering lists both; the popup is the
+ * whole view, so clicking does nothing. Background checks pause while T3 is
+ * unfocused and Claude's probe is cached, so opening the popup forces a fresh
+ * read, at most every 30 seconds per instance. Without limits it is the plain
+ * chart icon that opens the Usage page.
  */
 export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
@@ -112,6 +125,22 @@ export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) 
   // the reset times and pooling honest between updates.
   const now = useMinuteClock();
   const rings = selectClaudeUsageRings(presentations, now);
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
+  const [refreshing, setRefreshing] = useState(0);
+
+  const refreshUsage = () => {
+    const startedAt = Date.now();
+    for (const target of claudeUsageRefreshTargets(presentations, lastUsageRefreshAt, startedAt)) {
+      lastUsageRefreshAt.set(target.key, startedAt);
+      setRefreshing((count) => count + 1);
+      void refreshProviders({
+        environmentId: target.environmentId,
+        input: { instanceId: target.instanceId, refreshUsage: true },
+      }).finally(() => setRefreshing((count) => count - 1));
+    }
+  };
   const label = rings
     ? [
         "Usage",
@@ -124,7 +153,11 @@ export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) 
 
   return (
     <SidebarMenuItem className="shrink-0">
-      <Tooltip>
+      <Tooltip
+        onOpenChange={(open) => {
+          if (open && rings) refreshUsage();
+        }}
+      >
         <TooltipTrigger
           render={
             <SidebarMenuButton aria-label={label} onClick={rings ? undefined : onClick} size="icon">
@@ -142,12 +175,12 @@ export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) 
         <TooltipPopup side="top">
           {rings ? (
             <span className="flex flex-col gap-1">
-              <span className="font-medium">Claude usage</span>
+              <span className="flex items-center gap-2 font-medium">
+                Claude usage
+                {refreshing > 0 ? <Spinner size="xs" tone="muted" /> : null}
+              </span>
               <LegendRow label="Session" window={rings.session} color={SESSION_COLOR} now={now} />
               <LegendRow label="Weekly" window={rings.weekly} color={WEEKLY_COLOR} now={now} />
-              <span className="text-muted-foreground">
-                Updated {formatRelativeTimeLabel(rings.checkedAt)}
-              </span>
             </span>
           ) : (
             "Usage"

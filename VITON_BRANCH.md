@@ -84,9 +84,9 @@ git tag "$tag" && git push fork "$tag"
 
 ## Features
 
-| Feature             | Status             | New files                                                                                                               | Upstream files touched                                                     |
-| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Sidebar usage rings | Done, not deployed | `apps/web/src/components/sidebar/SidebarUsageItem.tsx`, `sidebarUsageRings.logic.ts`, `sidebarUsageRings.logic.test.ts` | `apps/web/src/components/sidebar/SidebarChrome.tsx` (swaps the Usage item) |
+| Feature             | Status             | New files                                                                                                               | Upstream files touched                                                                                                                                                                                                                 |
+| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar usage rings | Done, not deployed | `apps/web/src/components/sidebar/SidebarUsageItem.tsx`, `sidebarUsageRings.logic.ts`, `sidebarUsageRings.logic.test.ts` | `apps/web/src/components/sidebar/SidebarChrome.tsx` (swaps the Usage item); `packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `packages/client-runtime/src/state/server.ts` (`refreshUsage` flag on `server.refreshProviders`) |
 
 ### Sidebar usage rings
 
@@ -96,15 +96,21 @@ subscription limits as two rings, like Claude Code's `/usage`:
 - **Outer ring:** 5-hour session, in Claude orange.
 - **Inner ring:** all-models weekly window, in blue.
 - A ring turns red at 90% used or more.
-- Hovering lists both percentages with their reset times and when the data
-  was last updated. The popup is the whole view: clicking does nothing.
+- Hovering lists both percentages with their reset times. The popup is the
+  whole view: clicking does nothing.
+- Opening the popup forces a fresh read of each Claude instance, at most once
+  per 30 seconds (tracked in memory), with a spinner in the popup while it
+  runs.
 - With no Claude limits reported it falls back to the plain chart icon,
   which opens the Usage page.
 
 The data is the provider snapshot T3 already streams to the web app
 (`ServerProvider.usageLimits`), pooled across environments with the same
-helpers as the Usage page. Claude's `rate_limit_event`s update it during
-turns, and a once-a-minute clock keeps reset times current between updates.
+helpers as the Usage page. On its own it goes stale: background checks only
+run while a T3 window is focused, Claude's usage probe is cached for 5
+minutes, and `rate_limit_event`s during turns are sparse. Hence the forced
+read on hover, which sends `refreshUsage` to drop that instance's probe
+cache.
 
 Ideas for later:
 

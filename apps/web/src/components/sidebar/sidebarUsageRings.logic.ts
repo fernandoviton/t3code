@@ -1,6 +1,8 @@
+import type { EnvironmentId, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
 import {
   collectLimitAccounts,
   collectLimitPools,
+  providersWithLimits,
   type LimitPoolWindow,
   type LimitPresentations,
 } from "@t3tools/shared/usageLimits";
@@ -8,8 +10,6 @@ import {
 export interface SidebarUsageRings {
   readonly session: LimitPoolWindow | null;
   readonly weekly: LimitPoolWindow | null;
-  /** When the freshest Claude read landed, from a probe or a mid-turn rate-limit event. */
-  readonly checkedAt: string;
 }
 
 /** At or above this share used, a ring switches to the warning colour. */
@@ -34,9 +34,45 @@ export function selectClaudeUsageRings(
     pool.windows.find((window) => window.kind === "weekly" && window.id === "seven_day") ??
     pool.windows.find((window) => window.kind === "weekly") ??
     null;
-  if (!session && !weekly) return null;
-  const checkedAt = pool.accounts
-    .map((account) => account.limits.checkedAt)
-    .reduce((latest, next) => (Date.parse(next) > Date.parse(latest) ? next : latest));
-  return { session, weekly, checkedAt };
+  return session || weekly ? { session, weekly } : null;
 }
+
+/** Opening the popup re-reads usage at most this often per Claude instance. */
+export const USAGE_HOVER_REFRESH_MS = 30_000;
+
+export interface ClaudeUsageRefreshTarget {
+  readonly key: string;
+  readonly environmentId: EnvironmentId;
+  readonly instanceId: ProviderInstanceId;
+}
+
+/**
+ * Claude instances on connected environments that report usage and were not
+ * re-read in the last {@link USAGE_HOVER_REFRESH_MS}. `lastRefreshAt` holds
+ * when each key was last asked to refresh.
+ */
+export function claudeUsageRefreshTargets(
+  presentations: UsageRefreshPresentations,
+  lastRefreshAt: ReadonlyMap<string, number>,
+  now: number,
+): readonly ClaudeUsageRefreshTarget[] {
+  const targets: ClaudeUsageRefreshTarget[] = [];
+  for (const [environmentId, presentation] of presentations) {
+    if (presentation.connection.phase !== "connected") continue;
+    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
+      if (provider.driver !== "claudeAgent") continue;
+      const key = `${environmentId}:${provider.instanceId}`;
+      if (now - (lastRefreshAt.get(key) ?? -Infinity) < USAGE_HOVER_REFRESH_MS) continue;
+      targets.push({ key, environmentId, instanceId: provider.instanceId });
+    }
+  }
+  return targets;
+}
+
+type UsageRefreshPresentations = ReadonlyMap<
+  EnvironmentId,
+  {
+    readonly connection: { readonly phase: string };
+    readonly serverConfig: { readonly providers?: readonly ServerProvider[] | undefined } | null;
+  }
+>;

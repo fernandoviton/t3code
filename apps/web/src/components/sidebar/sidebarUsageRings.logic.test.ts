@@ -8,7 +8,11 @@ import {
 import type { LimitPresentations } from "@t3tools/shared/usageLimits";
 import { describe, expect, it } from "vite-plus/test";
 
-import { selectClaudeUsageRings } from "./sidebarUsageRings.logic";
+import {
+  claudeUsageRefreshTargets,
+  selectClaudeUsageRings,
+  USAGE_HOVER_REFRESH_MS,
+} from "./sidebarUsageRings.logic";
 
 const now = Date.parse("2026-10-16T12:00:00.000Z");
 
@@ -90,20 +94,42 @@ describe("selectClaudeUsageRings", () => {
     expect(rings?.session).toBeNull();
     expect(rings?.weekly?.usedPercent).toBe(8);
   });
+});
 
-  it("reports when the freshest Claude read landed", () => {
-    const rings = selectClaudeUsageRings(
-      presentations(
-        [provider("claudeAgent", [session], { email: "a@example.com" })],
-        [
-          provider("claudeAgent", [session], {
-            email: "b@example.com",
-            checkedAt: "2026-10-16T11:45:00.000Z",
-          }),
-        ],
-      ),
-      now,
-    );
-    expect(rings?.checkedAt).toBe("2026-10-16T11:45:00.000Z");
+describe("claudeUsageRefreshTargets", () => {
+  const environment = (phase: string, providers: readonly ServerProvider[]) => ({
+    connection: { phase },
+    serverConfig: { providers },
+  });
+  const connected = new Map([
+    [
+      EnvironmentId.make("local"),
+      environment("connected", [
+        provider("claudeAgent", [session]),
+        provider("codex", [session]),
+        provider("cursor", null),
+      ]),
+    ],
+    [
+      EnvironmentId.make("remote"),
+      environment("disconnected", [provider("claudeAgent", [session])]),
+    ],
+  ]);
+
+  it("targets Claude instances that report usage on connected environments", () => {
+    expect(claudeUsageRefreshTargets(connected, new Map(), now)).toEqual([
+      {
+        key: "local:claudeAgent",
+        environmentId: EnvironmentId.make("local"),
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+      },
+    ]);
+  });
+
+  it("skips an instance refreshed within the window", () => {
+    const recent = new Map([["local:claudeAgent", now - USAGE_HOVER_REFRESH_MS + 1]]);
+    expect(claudeUsageRefreshTargets(connected, recent, now)).toEqual([]);
+    const stale = new Map([["local:claudeAgent", now - USAGE_HOVER_REFRESH_MS]]);
+    expect(claudeUsageRefreshTargets(connected, stale, now)).toHaveLength(1);
   });
 });

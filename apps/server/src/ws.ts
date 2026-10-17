@@ -2224,6 +2224,10 @@ const layerWsRpc = (
                 { concurrency: "unbounded", discard: true },
               );
             }
+            if (input.refreshUsage && input.instanceId !== undefined && !input.refreshModels) {
+              const instance = yield* providerInstances.getInstance(input.instanceId);
+              yield* instance?.invalidateCaches ?? Effect.void;
+            }
             // An untargeted refresh is "re-read everything's status", which
             // includes quota from configured usage-limit sources. Awaited,
             // not forked: the RPC scope closes on return and would
