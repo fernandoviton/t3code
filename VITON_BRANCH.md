@@ -1,15 +1,15 @@
-# `custom` branch
+# `viton` branch
 
 Our long-lived branch of T3 Code. It is based on the latest **stable
 release** of upstream (`pingdotgg/t3code`) and carries our own features on
-top. Commit straight to `custom`; no PRs.
+top. Commit straight to `viton`; no PRs.
 
 **Current base: `v0.1.0`.**
 
 Remotes:
 
 - `origin`: upstream `pingdotgg/t3code`. Fetch release tags from here; never push.
-- `fork`: our fork `fernandoviton/t3code`. `custom` tracks `fork/custom`, so
+- `fork`: our fork `fernandoviton/t3code`. `viton` tracks `fork/viton`, so
   push after every commit.
 
 Never base on or merge upstream `main`: it runs ahead of releases with
@@ -38,7 +38,7 @@ git merge vX.Y.Z               # resolve conflicts using the table below
 corepack pnpm install --frozen-lockfile
 (cd apps/web && corepack pnpm exec vp test run --project unit src/components/sidebar)
 (cd apps/web && corepack pnpm run typecheck)
-git push fork custom
+git push fork viton
 ```
 
 ## Trying a change
@@ -57,7 +57,7 @@ PATH="$PWD/node_modules/.bin:$PATH" node scripts/dev-runner.ts dev \
 
 The `t3code` user service runs `apps/server/dist/bin.mjs` from this checkout.
 `~/src/build-t3code.sh <tag>` still checks out a release tag with
-`git reset --hard`, so it would **leave `custom`** and build plain upstream.
+`git reset --hard`, so it would **leave `viton`** and build plain upstream.
 To deploy this branch, the script needs a variant that builds the current
 branch instead (TODO). Update "Current base" above after each release merge.
 
