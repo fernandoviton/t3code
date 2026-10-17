@@ -96,9 +96,10 @@ subscription limits as two rings, like Claude Code's `/usage`:
 - **Outer ring:** 5-hour session, in Claude orange.
 - **Inner ring:** all-models weekly window, in blue.
 - A ring turns red at 90% used or more.
-- Hovering lists both percentages with their reset times; clicking still
-  opens the Usage page.
-- With no Claude limits reported it falls back to the plain chart icon.
+- Hovering lists both percentages with their reset times and when the data
+  was last updated. The popup is the whole view: clicking does nothing.
+- With no Claude limits reported it falls back to the plain chart icon,
+  which opens the Usage page.
 
 The data is the provider snapshot T3 already streams to the web app
 (`ServerProvider.usageLimits`), pooled across environments with the same

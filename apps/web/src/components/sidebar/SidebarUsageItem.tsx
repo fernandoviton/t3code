@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { environmentPresentations } from "../../state/presentation";
-import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { formatRelativeTimeLabel, formatUpcomingTimestamp } from "../../timestampFormat";
 import { SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PROVIDER_PRESENTATION } from "../usage/usageProviders";
@@ -102,8 +102,9 @@ function useMinuteClock(): number {
 
 /**
  * The footer's Usage button. With Claude limits reported it draws two rings,
- * session outside and weekly inside, and hovering lists both; otherwise it is
- * the plain chart icon.
+ * session outside and weekly inside, and hovering lists both with their
+ * freshness; the popup is the whole view, so clicking does nothing. Without
+ * them it is the plain chart icon that opens the Usage page.
  */
 export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) {
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
@@ -126,7 +127,7 @@ export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) 
       <Tooltip>
         <TooltipTrigger
           render={
-            <SidebarMenuButton aria-label={label} onClick={onClick} size="icon">
+            <SidebarMenuButton aria-label={label} onClick={rings ? undefined : onClick} size="icon">
               {rings ? (
                 <svg viewBox="0 0 18 18" className="size-[18px]" aria-hidden>
                   <Ring radius={8} window={rings.session} color={SESSION_COLOR} />
@@ -144,6 +145,9 @@ export function SidebarUsageItem({ onClick }: { readonly onClick: () => void }) 
               <span className="font-medium">Claude usage</span>
               <LegendRow label="Session" window={rings.session} color={SESSION_COLOR} now={now} />
               <LegendRow label="Weekly" window={rings.weekly} color={WEEKLY_COLOR} now={now} />
+              <span className="text-muted-foreground">
+                Updated {formatRelativeTimeLabel(rings.checkedAt)}
+              </span>
             </span>
           ) : (
             "Usage"

@@ -8,6 +8,8 @@ import {
 export interface SidebarUsageRings {
   readonly session: LimitPoolWindow | null;
   readonly weekly: LimitPoolWindow | null;
+  /** When the freshest Claude read landed, from a probe or a mid-turn rate-limit event. */
+  readonly checkedAt: string;
 }
 
 /** At or above this share used, a ring switches to the warning colour. */
@@ -32,5 +34,9 @@ export function selectClaudeUsageRings(
     pool.windows.find((window) => window.kind === "weekly" && window.id === "seven_day") ??
     pool.windows.find((window) => window.kind === "weekly") ??
     null;
-  return session || weekly ? { session, weekly } : null;
+  if (!session && !weekly) return null;
+  const checkedAt = pool.accounts
+    .map((account) => account.limits.checkedAt)
+    .reduce((latest, next) => (Date.parse(next) > Date.parse(latest) ? next : latest));
+  return { session, weekly, checkedAt };
 }

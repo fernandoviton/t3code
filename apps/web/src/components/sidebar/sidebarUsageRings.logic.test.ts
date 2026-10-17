@@ -38,6 +38,7 @@ const weeklyOpus: ServerProviderUsageWindow = {
 function provider(
   driver: string,
   windows: readonly ServerProviderUsageWindow[] | null,
+  { checkedAt = "2026-10-16T11:00:00.000Z", email }: { checkedAt?: string; email?: string } = {},
 ): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(driver),
@@ -46,22 +47,22 @@ function provider(
     installed: true,
     version: null,
     status: "ready",
-    auth: { status: "authenticated" },
+    auth: { status: "authenticated", ...(email ? { email } : {}) },
     checkedAt: "2026-10-16T11:00:00.000Z",
     models: [],
     slashCommands: [],
     skills: [],
-    ...(windows ? { usageLimits: { checkedAt: "2026-10-16T11:00:00.000Z", windows } } : {}),
+    ...(windows ? { usageLimits: { checkedAt, windows } } : {}),
   };
 }
 
-function presentations(providers: readonly ServerProvider[]): LimitPresentations {
-  return new Map([
-    [
-      EnvironmentId.make("local"),
-      { entry: { target: { label: "Local" } }, serverConfig: { providers } },
-    ],
-  ]);
+function presentations(...environments: (readonly ServerProvider[])[]): LimitPresentations {
+  return new Map(
+    environments.map((providers, index) => [
+      EnvironmentId.make(`env-${index}`),
+      { entry: { target: { label: `Env ${index}` } }, serverConfig: { providers } },
+    ]),
+  );
 }
 
 describe("selectClaudeUsageRings", () => {
@@ -88,5 +89,21 @@ describe("selectClaudeUsageRings", () => {
     const rings = selectClaudeUsageRings(presentations([provider("claudeAgent", [weekly])]), now);
     expect(rings?.session).toBeNull();
     expect(rings?.weekly?.usedPercent).toBe(8);
+  });
+
+  it("reports when the freshest Claude read landed", () => {
+    const rings = selectClaudeUsageRings(
+      presentations(
+        [provider("claudeAgent", [session], { email: "a@example.com" })],
+        [
+          provider("claudeAgent", [session], {
+            email: "b@example.com",
+            checkedAt: "2026-10-16T11:45:00.000Z",
+          }),
+        ],
+      ),
+      now,
+    );
+    expect(rings?.checkedAt).toBe("2026-10-16T11:45:00.000Z");
   });
 });
