@@ -64,12 +64,12 @@ branch instead (TODO). Update "Current base" above after each release merge.
 ## Windows installer
 
 `.github/workflows/viton-windows.yml` builds an unsigned Windows x64
-installer on GitHub Actions. To build one:
+installer on GitHub Actions and publishes it as a prerelease named after the
+tag, at https://github.com/fernandoviton/t3code/releases. To build one:
 
 ```bash
 tag=viton-build-$(date +%Y%m%d)-1   # bump the suffix for a second build that day
 git tag "$tag" && git push fork "$tag"
-gh run download -R fernandoviton/t3code --dir ~/outbox/   # once the run finishes
 ```
 
 - The version is `<base release>-preview.<date>.<run>`, e.g.

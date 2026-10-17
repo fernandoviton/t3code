@@ -1,8 +1,9 @@
 name: Viton Windows installer
 
-# Builds an unsigned Windows x64 installer of the `viton` branch. Push a
-# `viton-build-*` tag to run it (workflow_dispatch only appears once this file
-# is on the repository's default branch). See VITON_BRANCH.md.
+# Builds an unsigned Windows x64 installer of the `viton` branch and publishes
+# it as a prerelease named after the tag. Push a `viton-build-*` tag to run it
+# (workflow_dispatch only appears once this file is on the repository's default
+# branch). See VITON_BRANCH.md.
 #
 # The version is `<base release>-preview.<date>.<run>`. Upstream treats
 # `-preview.` builds as hand-installed: they ship without an update feed, so
@@ -15,7 +16,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Publishes each installer as a prerelease on this repository.
+  contents: write
 
 jobs:
   build:
@@ -101,3 +103,15 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "Viton $VERSION" \
+            --notes "Unsigned Windows x64 build of the \`viton\` branch at ${GITHUB_SHA::10}. Base release: v${VERSION%%-*}."
