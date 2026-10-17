@@ -1,0 +1,103 @@
+name: Viton Windows installer
+
+# Builds an unsigned Windows x64 installer of the `viton` branch. Push a
+# `viton-build-*` tag to run it (workflow_dispatch only appears once this file
+# is on the repository's default branch). See VITON_BRANCH.md.
+#
+# The version is `<base release>-preview.<date>.<run>`. Upstream treats
+# `-preview.` builds as hand-installed: they ship without an update feed, so
+# the app never auto-updates itself back to an official release.
+
+on:
+  push:
+    tags:
+      - "viton-build-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      # Same checkout as release-desktop.yml: skip the vendored .repos tree,
+      # whose orphaned gitlinks break actions/checkout's cleanup. Blobless with
+      # tags so the base release can be found below.
+      - name: Checkout
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --filter=blob:none --tags origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' HEAD)"
+          version="${base#v}-preview.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          echo "Building $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Install dependencies
+        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Spectre-mitigated MSVC libs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $proc = Start-Process -FilePath $setupExe `
+            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
+            "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre", "--quiet", "--norestart" `
+            -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
+            Write-Error "Visual Studio Installer failed with exit code $code"
+            exit $code
+          }
+
+      - name: Align package versions
+        run: node scripts/update-release-package-versions.ts "${{ steps.version.outputs.version }}"
+
+      - name: Build JS bundle
+        run: vp run build:desktop
+
+      - name: Build installer
+        shell: bash
+        run: |
+          vp run dist:desktop:artifact \
+            --platform win --target nsis --arch x64 \
+            --build-version "${{ steps.version.outputs.version }}" \
+            --skip-build --verbose
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: t3code-viton-${{ steps.version.outputs.version }}-win-x64
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 30

@@ -61,6 +61,27 @@ The `t3code` user service runs `apps/server/dist/bin.mjs` from this checkout.
 To deploy this branch, the script needs a variant that builds the current
 branch instead (TODO). Update "Current base" above after each release merge.
 
+## Windows installer
+
+`.github/workflows/viton-windows.yml` builds an unsigned Windows x64
+installer on GitHub Actions. To build one:
+
+```bash
+tag=viton-build-$(date +%Y%m%d)-1   # bump the suffix for a second build that day
+git tag "$tag" && git push fork "$tag"
+gh run download -R fernandoviton/t3code --dir ~/outbox/   # once the run finishes
+```
+
+- The version is `<base release>-preview.<date>.<run>`, e.g.
+  `0.1.0-preview.20261016.1`. Upstream ships `-preview.` builds without an
+  update feed, so the app won't auto-update back to official T3.
+- It has the same app ID as official T3, so installing it replaces an
+  official install and keeps the same settings and data.
+- Unsigned, so Windows SmartScreen warns on first run ("More info" → "Run
+  anyway").
+- Built without upstream's Clerk/relay config, so T3 Connect sign-in isn't
+  available. Direct connections to a server work.
+
 ## Features
 
 | Feature             | Status             | New files                                                                                                               | Upstream files touched                                                     |
