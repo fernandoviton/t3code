@@ -56,10 +56,17 @@ PATH="$PWD/node_modules/.bin:$PATH" node scripts/dev-runner.ts dev \
 ## Deploying
 
 The `t3code` user service runs `apps/server/dist/bin.mjs` from this checkout.
+To deploy the latest `viton` commit, on the VM with a clean `viton` checkout:
+
+```bash
+~/src/build-t3code.sh viton        # builds in place, stamps <base>+viton.<sha>
+systemctl --user restart t3code    # run yourself: it drops sessions hosted by this server
+```
+
+The build stamps the version only for the build and restores the files after.
 `~/src/build-t3code.sh <tag>` still checks out a release tag with
-`git reset --hard`, so it would **leave `viton`** and build plain upstream.
-To deploy this branch, the script needs a variant that builds the current
-branch instead (TODO). Update "Current base" above after each release merge.
+`git reset --hard`, so it **leaves `viton`**. Use it only to roll back to plain
+upstream. Update "Current base" above after each release merge.
 
 ## Windows installer
 
@@ -84,9 +91,9 @@ git tag "$tag" && git push fork "$tag"
 
 ## Features
 
-| Feature             | Status             | New files                                                                                                               | Upstream files touched                                                                                                                                                                                                                 |
-| ------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar usage rings | Done, not deployed | `apps/web/src/components/sidebar/SidebarUsageItem.tsx`, `sidebarUsageRings.logic.ts`, `sidebarUsageRings.logic.test.ts` | `apps/web/src/components/sidebar/SidebarChrome.tsx` (swaps the Usage item); `packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `packages/client-runtime/src/state/server.ts` (`refreshUsage` flag on `server.refreshProviders`) |
+| Feature             | Status   | New files                                                                                                               | Upstream files touched                                                                                                                                                                                                                 |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar usage rings | Deployed | `apps/web/src/components/sidebar/SidebarUsageItem.tsx`, `sidebarUsageRings.logic.ts`, `sidebarUsageRings.logic.test.ts` | `apps/web/src/components/sidebar/SidebarChrome.tsx` (swaps the Usage item); `packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `packages/client-runtime/src/state/server.ts` (`refreshUsage` flag on `server.refreshProviders`) |
 
 ### Sidebar usage rings
 
