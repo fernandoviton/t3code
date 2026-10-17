@@ -1,27 +1,34 @@
 # `custom` branch
 
-Our long-lived branch of T3 Code. It tracks upstream `main`
-(`pingdotgg/t3code`) and carries our own features on top. Commit straight to
-`custom`; no PRs.
+Our long-lived branch of T3 Code. It is based on the latest **stable
+release** of upstream (`pingdotgg/t3code`) and carries our own features on
+top. Commit straight to `custom`; no PRs.
+
+**Current base: `v0.1.0`.**
+
+Never base on or merge upstream `main`: it runs ahead of releases with
+unreleased work. Upstream has no release branch; stable releases are the
+plain `vX.Y.Z` tags. Ignore the `-nightly.*` and `-preview.*` tags.
 
 ## Ground rules
 
 - Keep each feature in **new files** where possible, with the smallest
-  possible edits to upstream files. That keeps syncs with `main` cheap.
+  possible edits to upstream files. That keeps release syncs cheap.
 - List every upstream file a feature touches in the table below, so a merge
   conflict points straight at the feature that caused it.
 - Every feature ships with a unit test for its logic and passes
   `vp fmt`, `vp lint`, and `tsc-rs --noEmit` in the app it touches.
 
-## Syncing with upstream
+## Moving to a new release
 
-Pick one approach and stick to it. Merging is the default because the branch
-is shared and never force-pushed:
+When upstream tags a new stable release, merge that tag. Merge rather than
+rebase because the branch is shared and never force-pushed:
 
 ```bash
 cd ~/src/t3code
-git fetch origin
-git merge origin/main          # resolve conflicts using the table below
+git fetch origin --tags
+git tag -l 'v*' | grep -vE 'nightly|preview' | sort -V | tail -1   # newest stable
+git merge vX.Y.Z               # resolve conflicts using the table below
 corepack pnpm install --frozen-lockfile
 (cd apps/web && corepack pnpm exec vp test run --project unit src/components/sidebar)
 (cd apps/web && corepack pnpm run typecheck)
@@ -43,8 +50,9 @@ PATH="$PWD/node_modules/.bin:$PATH" node scripts/dev-runner.ts dev \
 
 The `t3code` user service runs `apps/server/dist/bin.mjs` from this checkout.
 `~/src/build-t3code.sh <tag>` still checks out a release tag with
-`git reset --hard`, so it would **leave `custom`**. To deploy this branch,
-the script needs a variant that builds the current branch instead (TODO).
+`git reset --hard`, so it would **leave `custom`** and build plain upstream.
+To deploy this branch, the script needs a variant that builds the current
+branch instead (TODO). Update "Current base" above after each release merge.
 
 ## Features
 
