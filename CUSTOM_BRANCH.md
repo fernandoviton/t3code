@@ -6,6 +6,12 @@ top. Commit straight to `custom`; no PRs.
 
 **Current base: `v0.1.0`.**
 
+Remotes:
+
+- `origin`: upstream `pingdotgg/t3code`. Fetch release tags from here; never push.
+- `fork`: our fork `fernandoviton/t3code`. `custom` tracks `fork/custom`, so
+  push after every commit.
+
 Never base on or merge upstream `main`: it runs ahead of releases with
 unreleased work. Upstream has no release branch; stable releases are the
 plain `vX.Y.Z` tags. Ignore the `-nightly.*` and `-preview.*` tags.
@@ -32,6 +38,7 @@ git merge vX.Y.Z               # resolve conflicts using the table below
 corepack pnpm install --frozen-lockfile
 (cd apps/web && corepack pnpm exec vp test run --project unit src/components/sidebar)
 (cd apps/web && corepack pnpm run typecheck)
+git push fork custom
 ```
 
 ## Trying a change
