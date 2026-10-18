@@ -46,7 +46,7 @@ import {
 import { usePrimaryCloudLinkState } from "../../cloud/primaryCloudLinkState";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import {
   useEnvironment,
@@ -263,6 +263,8 @@ export function ScheduledTasksSettings(target: {
   }, []);
   const defaultEnvironment = environment ?? connectedEnvironments[0];
   // A thread's "Schedule message…" lands here to open a one-off bound to it.
+  // Closing that editor returns to the thread it came from.
+  const navigate = useNavigate();
   const openedThreadLink = useRef(false);
   const threadLinkEnvironmentId = target.environmentId ?? defaultEnvironment?.environmentId;
   useEffect(() => {
@@ -270,6 +272,16 @@ export function ScheduledTasksSettings(target: {
     openedThreadLink.current = true;
     setEditor({ environmentId: threadLinkEnvironmentId, task: null, threadId: target.threadId });
   }, [target.threadId, threadLinkEnvironmentId]);
+  const closeEditor = useCallback(() => {
+    const returnTo = editor?.threadId ? editor : null;
+    setEditor(null);
+    if (returnTo?.threadId) {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: returnTo.environmentId, threadId: returnTo.threadId },
+      });
+    }
+  }, [editor, navigate]);
   const canCreate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(defaultEnvironment?.environmentId ?? null),
   );
@@ -332,7 +344,7 @@ export function ScheduledTasksSettings(target: {
           initialEnvironmentId={editor.environmentId}
           task={editor.task}
           {...(editor.threadId ? { threadId: editor.threadId } : {})}
-          onClose={() => setEditor(null)}
+          onClose={closeEditor}
         />
       ) : null}
     </SettingsPageContainer>
