@@ -104,9 +104,14 @@ const DAYS = [
 
 function describeSchedule(task: ScheduledTask): string {
   if (task.schedule.type === "webhook") return "On webhook";
+  if (task.schedule.type === "once") return `Once, ${formatRunAt(task.schedule.runAt)}`;
   if (task.schedule.type === "interval") return formatScheduledTaskInterval(task.schedule.everyMs);
   const days = task.schedule.weekdays?.length ? repeatLabel(task.schedule.weekdays) : "Every day";
   return `${days} at ${formatTime(task.schedule.timeOfDay)}`;
+}
+
+function formatRunAt(value: string): string {
+  return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function formatTime(value: string): string {
@@ -598,6 +603,7 @@ function TaskForm({
   });
   const submissionPending = useRef(false);
   const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [runAtPicker, setRunAtPicker] = useState<"date" | "time" | null>(null);
   const taskMissing =
     draft.task !== null &&
     tasks.data !== null &&
@@ -860,6 +866,7 @@ function TaskForm({
         <View className="px-4 py-3">
           <SegmentedControl
             options={[
+              { value: "once", label: "Once" },
               { value: "fixed_time", label: "At a time" },
               { value: "interval", label: "Interval" },
               { value: "webhook", label: "On webhook" },
@@ -867,18 +874,84 @@ function TaskForm({
             selected={draft.schedule.mode}
             onSelect={(mode) => {
               setTimePickerOpen(false);
+              setRunAtPicker(null);
               setDraft({
                 ...draft,
                 prompt:
                   mode === "webhook" && !draft.prompt.trim()
                     ? DEFAULT_WEBHOOK_PROMPT
                     : draft.prompt,
-                schedule: { ...draft.schedule, mode },
+                schedule: {
+                  ...draft.schedule,
+                  mode,
+                  runAt:
+                    mode === "once" && !draft.schedule.runAt
+                      ? new Date(Date.now() + 60 * 60_000).toISOString()
+                      : draft.schedule.runAt,
+                },
               });
             }}
           />
         </View>
-        {draft.schedule.mode === "fixed_time" ? (
+        {draft.schedule.mode === "once" ? (
+          <>
+            {(["date", "time"] as const).map((part) => {
+              const runAt = new Date(draft.schedule.runAt);
+              const label = Number.isNaN(runAt.getTime())
+                ? "Not set"
+                : part === "date"
+                  ? runAt.toLocaleDateString(undefined, { dateStyle: "medium" })
+                  : runAt.toLocaleTimeString(undefined, { timeStyle: "short" });
+              return (
+                <View key={part}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${part === "date" ? "Date" : "Time"}, ${label}`}
+                    onPress={() => setRunAtPicker((open) => (open === part ? null : part))}
+                    className="min-h-14 flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
+                  >
+                    <Text className="text-lg text-foreground">
+                      {part === "date" ? "Date" : "Time"}
+                    </Text>
+                    <Text className="min-w-0 flex-1 text-right text-base text-foreground-muted">
+                      {label}
+                    </Text>
+                    <SymbolView
+                      name="chevron.right"
+                      size={14}
+                      tintColorClassName="accent-chevron"
+                      type="monochrome"
+                    />
+                  </Pressable>
+                  {runAtPicker === part ? (
+                    <DateTimePicker
+                      value={Number.isNaN(runAt.getTime()) ? new Date() : runAt}
+                      mode={part}
+                      display={Platform.OS === "ios" ? "spinner" : "default"}
+                      onDismiss={() => setRunAtPicker(null)}
+                      onValueChange={(_, selected) => {
+                        const next = Number.isNaN(runAt.getTime()) ? new Date() : new Date(runAt);
+                        if (part === "date") {
+                          next.setFullYear(
+                            selected.getFullYear(),
+                            selected.getMonth(),
+                            selected.getDate(),
+                          );
+                        } else {
+                          next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+                        }
+                        setDraft({
+                          ...draft,
+                          schedule: { ...draft.schedule, runAt: next.toISOString() },
+                        });
+                      }}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+          </>
+        ) : draft.schedule.mode === "fixed_time" ? (
           <>
             <Pressable
               accessibilityRole="button"

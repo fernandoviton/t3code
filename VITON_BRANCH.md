@@ -91,9 +91,10 @@ git tag "$tag" && git push fork "$tag"
 
 ## Features
 
-| Feature             | Status   | New files                                                                                                               | Upstream files touched                                                                                                                                                                                                                 |
-| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar usage rings | Deployed | `apps/web/src/components/sidebar/SidebarUsageItem.tsx`, `sidebarUsageRings.logic.ts`, `sidebarUsageRings.logic.test.ts` | `apps/web/src/components/sidebar/SidebarChrome.tsx` (swaps the Usage item); `packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `packages/client-runtime/src/state/server.ts` (`refreshUsage` flag on `server.refreshProviders`) |
+| Feature                    | Status   | New files                                                                                                               | Upstream files touched                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar usage rings        | Deployed | `apps/web/src/components/sidebar/SidebarUsageItem.tsx`, `sidebarUsageRings.logic.ts`, `sidebarUsageRings.logic.test.ts` | `apps/web/src/components/sidebar/SidebarChrome.tsx` (swaps the Usage item); `packages/contracts/src/rpc.ts`, `apps/server/src/ws.ts`, `packages/client-runtime/src/state/server.ts` (`refreshUsage` flag on `server.refreshProviders`)                                                                                                                                                                                                                                       |
+| One-off scheduled messages | Built    | none                                                                                                                    | `packages/contracts/src/scheduledTask.ts` (`once` trigger), `orchestratorMcp.ts`; `apps/server/src/scheduledTasks/Schedule.ts`, `ScheduledTaskService.ts`; `apps/web/src/components/settings/ScheduledTasksSettings.tsx`, `scheduledTasksSettings.logic.ts`, `threadActionMenu.logic.ts`, `hooks/useThreadActionMenu.ts`, `Sidebar.tsx`; `apps/mobile/src/features/settings/scheduledTaskDraft.ts`, `SettingsScheduledTasksRouteScreen.tsx`; `docs/user/project-settings.md` |
 
 ### Sidebar usage rings
 
@@ -123,3 +124,17 @@ Ideas for later:
 
 - Show other providers' limits (Codex etc.) when Claude isn't configured.
 - Amber warning tier before red.
+
+### One-off scheduled messages
+
+A **Once** trigger for scheduled tasks (`{type:"once", runAt}`), mainly to
+queue a prompt for when a usage limit resets. **Schedule message…** in a
+thread's menu opens the task form bound to that thread; the form's **Run in**
+picker chooses a thread or a new one.
+
+- It fires one time. A run missed while the server was off fires on boot,
+  unlike fixed-time runs. Any run, including **Run now**, uses it up.
+- Into an existing thread it is queued, so it waits for a running turn.
+- The server rejects a run time in the past.
+- Not gated by server capability: a client on an older server gets a save
+  error.

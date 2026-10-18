@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   type ProjectId,
+  ThreadId,
   ScheduledTaskId,
   type ScheduledTask,
   type ScheduledTaskUpsertSchedule,
@@ -10,6 +11,7 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import { parseMaxDeliveryAge } from "@t3tools/client-runtime/scheduled-task-webhook";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 
 import {
   resolveProjectSettings,
@@ -42,10 +44,14 @@ export function validateScheduledTasksSearch(raw: Record<string, unknown>) {
     ...(typeof raw.taskId === "string" && raw.taskId.trim()
       ? { taskId: ScheduledTaskId.make(raw.taskId) }
       : {}),
+    /** Opens a new one-off task bound to this thread. */
+    ...(typeof raw.threadId === "string" && raw.threadId.trim()
+      ? { threadId: ThreadId.make(raw.threadId) }
+      : {}),
   };
 }
 
-export type ScheduleMode = "fixed" | "interval" | "webhook";
+export type ScheduleMode = "once" | "fixed" | "interval" | "webhook";
 export type WorkspaceMode = "root" | "worktree" | "existing_worktree";
 
 export interface DraftState {
@@ -57,6 +63,8 @@ export interface DraftState {
   readonly intervalMinutes: string;
   readonly timeOfDay: string;
   readonly weekdays: ReadonlySet<number>;
+  /** Local `YYYY-MM-DDTHH:mm`, as a datetime-local input reads and writes it. */
+  readonly runAt: string;
   readonly projectId: string;
   readonly threadId: string;
   readonly workspaceMode: WorkspaceMode;
@@ -90,8 +98,19 @@ export const WEBHOOK_SIGNATURE_DEFAULTS = {
   signaturePrefix: "sha256=",
 } as const;
 
-/** Null when the draft's webhook age limit is invalid; the caller reports it and does not save. */
+/** Formats an instant for a datetime-local input, in the browser's zone. */
+export function toLocalDateTimeInput(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Null when the draft's webhook age limit or run time is invalid; the caller reports it and does not save. */
 export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedule | null {
+  if (draft.scheduleMode === "once") {
+    // A datetime-local value without an offset parses as local time.
+    const runAt = new Date(draft.runAt);
+    return Number.isNaN(runAt.getTime()) ? null : { type: "once", runAt: runAt.toISOString() };
+  }
   if (draft.scheduleMode === "webhook") {
     const maxDeliveryAgeMinutes = parseMaxDeliveryAge(draft.maxDeliveryAgeMinutes);
     if (maxDeliveryAgeMinutes === undefined) return null;
@@ -133,11 +152,21 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     prompt: task.prompt,
     enabled: task.enabled,
     scheduleMode:
-      schedule.type === "interval" ? "interval" : schedule.type === "webhook" ? "webhook" : "fixed",
+      schedule.type === "interval"
+        ? "interval"
+        : schedule.type === "webhook"
+          ? "webhook"
+          : schedule.type === "once"
+            ? "once"
+            : "fixed",
     intervalMinutes:
       schedule.type === "interval" ? String(Math.max(1, schedule.everyMs / 60_000)) : "15",
     timeOfDay: schedule.type === "fixed_time" ? schedule.timeOfDay : "09:00",
     weekdays,
+    runAt:
+      schedule.type === "once"
+        ? toLocalDateTimeInput(new Date(schedule.runAt))
+        : toLocalDateTimeInput(new Date(Date.now() + 60 * 60_000)),
     projectId: task.projectId,
     threadId: task.threadId ?? "",
     workspaceMode: task.workspaceStrategy.type,
@@ -203,4 +232,27 @@ export function scheduledTaskDefaultModel(
   );
   const fallback = models.find(({ model }) => model.isDefault) ?? models[0];
   return fallback ? { instanceId: fallback.instanceId, model: fallback.model.slug } : null;
+}
+
+/** A one-off that posts into an existing thread, keeping that thread's model and modes. */
+export function threadFollowUpDraft(
+  base: DraftState,
+  thread: Pick<
+    EnvironmentThreadShell,
+    "id" | "projectId" | "title" | "modelSelection" | "runtimeMode" | "interactionMode"
+  >,
+  now: Date,
+): DraftState {
+  return {
+    ...base,
+    title: `Follow up: ${thread.title}`,
+    scheduleMode: "once",
+    runAt: toLocalDateTimeInput(new Date(now.getTime() + 60 * 60_000)),
+    projectId: thread.projectId,
+    threadId: thread.id,
+    modelKey: `${thread.modelSelection.instanceId}:${thread.modelSelection.model}`,
+    baseModelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
+  };
 }

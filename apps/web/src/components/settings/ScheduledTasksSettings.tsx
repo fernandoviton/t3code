@@ -53,7 +53,7 @@ import {
   useEnvironmentHttpBaseUrl,
   type EnvironmentPresentation,
 } from "../../state/environments";
-import { useProjects } from "../../state/entities";
+import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -68,6 +68,8 @@ import {
   scheduleFromDraft,
   scheduledTaskDefaultModel,
   taskToDraft,
+  threadFollowUpDraft,
+  toLocalDateTimeInput,
   type DraftState,
   type ScheduleMode,
   type WorkspaceMode,
@@ -113,6 +115,9 @@ const WORKSPACE_MODE_LABELS: Record<WorkspaceMode, string> = {
   existing_worktree: "Use a specific checkout",
 };
 
+/** Select value for "launch a new thread"; thread ids are never empty. */
+const NEW_THREAD_VALUE = "__new-thread__";
+
 const EMPTY_DRAFT: DraftState = {
   editingId: null,
   title: "",
@@ -122,6 +127,7 @@ const EMPTY_DRAFT: DraftState = {
   intervalMinutes: "15",
   timeOfDay: "09:00",
   weekdays: new Set([1, 2, 3, 4, 5]),
+  runAt: "",
   projectId: "",
   threadId: "",
   workspaceMode: "worktree",
@@ -174,6 +180,12 @@ function splitModelKey(value: string): ModelSelection | null {
 
 export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
   if (schedule.type === "webhook") return "On webhook";
+  if (schedule.type === "once") {
+    return `Once, ${new Date(schedule.runAt).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    })}`;
+  }
   if (schedule.type === "interval") {
     const minutes = schedule.everyMs / 60_000;
     return Number.isInteger(minutes)
@@ -238,16 +250,26 @@ function statusVariant(status: ScheduledTask["lastRunStatus"]) {
 export function ScheduledTasksSettings(target: {
   readonly environmentId?: EnvironmentId;
   readonly taskId?: ScheduledTaskId | undefined;
+  readonly threadId?: ThreadId | undefined;
 }) {
   const { scope, environments, connectedEnvironments, environment } = useSettingsScope();
   const [editor, setEditor] = useState<{
     environmentId: EnvironmentId;
     task: ScheduledTask | null;
+    threadId?: ThreadId;
   } | null>(null);
   const openForEdit = useCallback((environmentId: EnvironmentId, task: ScheduledTask) => {
     setEditor({ environmentId, task });
   }, []);
   const defaultEnvironment = environment ?? connectedEnvironments[0];
+  // A thread's "Schedule message…" lands here to open a one-off bound to it.
+  const openedThreadLink = useRef(false);
+  const threadLinkEnvironmentId = target.environmentId ?? defaultEnvironment?.environmentId;
+  useEffect(() => {
+    if (openedThreadLink.current || !target.threadId || !threadLinkEnvironmentId) return;
+    openedThreadLink.current = true;
+    setEditor({ environmentId: threadLinkEnvironmentId, task: null, threadId: target.threadId });
+  }, [target.threadId, threadLinkEnvironmentId]);
   const canCreate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(defaultEnvironment?.environmentId ?? null),
   );
@@ -309,6 +331,7 @@ export function ScheduledTasksSettings(target: {
           key={`${editor.environmentId}:${editor.task?.id ?? "new"}`}
           initialEnvironmentId={editor.environmentId}
           task={editor.task}
+          {...(editor.threadId ? { threadId: editor.threadId } : {})}
           onClose={() => setEditor(null)}
         />
       ) : null}
@@ -771,10 +794,13 @@ function WebhookDeliveryMode({ environmentId }: { readonly environmentId: Enviro
 function ScheduledTaskEditorDialog({
   initialEnvironmentId,
   task,
+  threadId,
   onClose,
 }: {
   readonly initialEnvironmentId: EnvironmentId;
   readonly task: ScheduledTask | null;
+  /** Seeds a new one-off that posts into this thread. */
+  readonly threadId?: ThreadId;
   readonly onClose: () => void;
 }) {
   const { scope, connectedEnvironments } = useSettingsScope();
@@ -804,9 +830,22 @@ function ScheduledTaskEditorDialog({
   const upsertTask = useAtomCommand(serverEnvironment.upsertScheduledTask, {
     label: "scheduled task upsert",
   });
-  const [draft, setDraft] = useState<DraftState>(() =>
-    task ? taskToDraft(task) : { ...EMPTY_DRAFT, projectId: projects[0]?.id ?? "" },
-  );
+  const threadShells = useThreadShells();
+  const [draft, setDraft] = useState<DraftState>(() => {
+    if (task) return taskToDraft(task);
+    const now = new Date();
+    const base: DraftState = {
+      ...EMPTY_DRAFT,
+      runAt: toLocalDateTimeInput(new Date(now.getTime() + 60 * 60_000)),
+      projectId: projects[0]?.id ?? "",
+    };
+    const thread = threadId
+      ? threadShells.find(
+          (shell) => shell.environmentId === initialEnvironmentId && shell.id === threadId,
+        )
+      : undefined;
+    return thread ? threadFollowUpDraft(base, thread, now) : base;
+  });
   const [saving, setSaving] = useState(false);
   const submissionPending = useRef(false);
   const editingTaskMissing =
@@ -820,6 +859,19 @@ function ScheduledTaskEditorDialog({
     : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const projectThreads = useMemo(
+    () =>
+      threadShells
+        .filter(
+          (shell) =>
+            shell.environmentId === environmentId &&
+            shell.projectId === selectedProjectId &&
+            (shell.archivedAt === null || shell.id === draft.threadId),
+        )
+        .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [threadShells, environmentId, selectedProjectId, draft.threadId],
+  );
+  const boundThread = projectThreads.find((shell) => shell.id === draft.threadId);
   // The task runs in selectedProject, so its model picker should reflect that
   // project's effective enablement, not just the machine's.
   const instanceEntries = useMemo(
@@ -882,6 +934,14 @@ function ScheduledTaskEditorDialog({
       return;
     }
     const schedule = scheduleFromDraft(draft);
+    if (schedule === null && draft.scheduleMode === "once") {
+      reportFailure("Invalid run time", "Pick the date and time to run.");
+      return;
+    }
+    if (schedule?.type === "once" && Date.parse(schedule.runAt) <= Date.now() && draft.enabled) {
+      reportFailure("Run time has passed", "Pick a time in the future.");
+      return;
+    }
     if (schedule === null) {
       reportFailure(
         "Invalid age limit",
@@ -906,7 +966,11 @@ function ScheduledTaskEditorDialog({
       reportFailure("Invalid interval", "Enter an interval of at least one minute.");
       return;
     }
-    if (draft.workspaceMode === "existing_worktree" && !draft.existingWorktreePath.trim()) {
+    if (
+      !draft.threadId &&
+      draft.workspaceMode === "existing_worktree" &&
+      !draft.existingWorktreePath.trim()
+    ) {
       reportFailure("Checkout path is required", "Enter the path of the checkout to run in.");
       return;
     }
@@ -968,7 +1032,7 @@ function ScheduledTaskEditorDialog({
         <DialogHeader>
           <DialogTitle>{draft.editingId ? "Edit task" : "New task"}</DialogTitle>
           <DialogDescription>
-            Run a prompt automatically — on an interval, at a fixed time, or when a webhook is
+            Run a prompt automatically — once, on an interval, at a fixed time, or when a webhook is
             called.
           </DialogDescription>
         </DialogHeader>
@@ -1047,7 +1111,11 @@ function ScheduledTaskEditorDialog({
                 <Select
                   value={selectedProjectId}
                   onValueChange={(projectId) =>
-                    setDraft((current) => ({ ...current, projectId: projectId ?? "" }))
+                    setDraft((current) => ({
+                      ...current,
+                      projectId: projectId ?? "",
+                      threadId: "",
+                    }))
                   }
                 >
                   <SelectTrigger size="sm" id="scheduled-task-project">
@@ -1065,6 +1133,43 @@ function ScheduledTaskEditorDialog({
                 </Select>
               </Field>
 
+              <Field label="Run in" htmlFor="scheduled-task-thread">
+                <Select
+                  value={draft.threadId || NEW_THREAD_VALUE}
+                  onValueChange={(value) => {
+                    const thread = projectThreads.find((shell) => shell.id === value);
+                    setDraft((current) =>
+                      thread
+                        ? {
+                            ...current,
+                            threadId: thread.id,
+                            modelKey: `${thread.modelSelection.instanceId}:${thread.modelSelection.model}`,
+                            baseModelSelection: thread.modelSelection,
+                          }
+                        : { ...current, threadId: "" },
+                    );
+                  }}
+                >
+                  <SelectTrigger size="sm" id="scheduled-task-thread">
+                    <SelectValue>
+                      {draft.threadId
+                        ? (boundThread?.title ?? "Unavailable thread")
+                        : "A new thread each run"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value={NEW_THREAD_VALUE}>A new thread each run</SelectItem>
+                    {projectThreads.map((shell) => (
+                      <SelectItem key={shell.id} value={shell.id}>
+                        {shell.title}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </Field>
+            </div>
+
+            {draft.threadId ? null : (
               <Field label="Workspace" htmlFor="scheduled-task-workspace">
                 <Select
                   value={draft.workspaceMode}
@@ -1082,9 +1187,9 @@ function ScheduledTaskEditorDialog({
                   </SelectPopup>
                 </Select>
               </Field>
-            </div>
+            )}
 
-            {draft.workspaceMode === "worktree" ? (
+            {!draft.threadId && draft.workspaceMode === "worktree" ? (
               <Field label="Base branch" htmlFor="scheduled-task-base-ref">
                 <WorktreeBaseBranchPicker
                   key={`${environmentId}:${selectedProjectId}`}
@@ -1101,7 +1206,7 @@ function ScheduledTaskEditorDialog({
                 />
               </Field>
             ) : null}
-            {draft.workspaceMode === "existing_worktree" ? (
+            {!draft.threadId && draft.workspaceMode === "existing_worktree" ? (
               <Field label="Checkout path" htmlFor="scheduled-task-checkout">
                 <Input
                   id="scheduled-task-checkout"
@@ -1163,7 +1268,12 @@ function ScheduledTaskEditorDialog({
                   value={[draft.scheduleMode]}
                   onValueChange={(values) => {
                     const mode = values[0] as ScheduleMode | undefined;
-                    if (mode === "fixed" || mode === "interval" || mode === "webhook")
+                    if (
+                      mode === "once" ||
+                      mode === "fixed" ||
+                      mode === "interval" ||
+                      mode === "webhook"
+                    )
                       setDraft((current) => ({
                         ...current,
                         scheduleMode: mode,
@@ -1174,6 +1284,7 @@ function ScheduledTaskEditorDialog({
                       }));
                   }}
                 >
+                  <Toggle value="once">Once</Toggle>
                   <Toggle value="fixed">At a time</Toggle>
                   <Toggle value="interval">Every interval</Toggle>
                   <Toggle value="webhook">On webhook</Toggle>
@@ -1291,6 +1402,20 @@ function ScheduledTaskEditorDialog({
                       </Field>
                     </div>
                   ) : null}
+                </div>
+              ) : draft.scheduleMode === "once" ? (
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="scheduled-task-run-at">Run at</Label>
+                  <Input
+                    type="datetime-local"
+                    id="scheduled-task-run-at"
+                    nativeInput
+                    className="w-56"
+                    value={draft.runAt}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, runAt: event.target.value }))
+                    }
+                  />
                 </div>
               ) : draft.scheduleMode === "fixed" ? (
                 <div className="flex flex-wrap items-center gap-3">

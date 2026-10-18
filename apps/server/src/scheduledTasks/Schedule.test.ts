@@ -53,6 +53,26 @@ describe("scheduled task schedule calculation", () => {
     expect(parts?.minute).toBe(0);
   });
 
+  it("runs a one-off only while its instant is upcoming", () => {
+    const once = { type: "once", runAt: "2026-07-01T16:30:00.000Z" } as const;
+    const next = nextScheduledRunAt(once, DateTime.makeUnsafe("2026-07-01T16:00:00.000Z"));
+    expect(next ? DateTime.formatIso(DateTime.toUtc(next)) : null).toBe(once.runAt);
+    expect(nextScheduledRunAt(once, DateTime.makeUnsafe(once.runAt))).toBeNull();
+    expect(nextScheduledRunAt({ type: "once", runAt: "soon" }, DateTime.nowUnsafe())).toBeNull();
+    // A one-off missed while the server was off still fires late.
+    expect(
+      isMissedFixedTimeRun(
+        once,
+        DateTime.makeUnsafe(once.runAt),
+        DateTime.makeUnsafe("2026-07-02T16:30:00.000Z"),
+      ),
+    ).toBe(false);
+    // The same instant in another offset is the same schedule.
+    expect(isSameSchedule(once, { type: "once", runAt: "2026-07-01T09:30:00.000-07:00" })).toBe(
+      true,
+    );
+  });
+
   it("skips fixed-time runs missed by more than the grace window", () => {
     const fixedTime = { type: "fixed_time", timeOfDay: "09:00" } as const;
     const dueAt = DateTime.makeUnsafe("2026-07-01T09:00:00.000Z");

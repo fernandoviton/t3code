@@ -30,6 +30,14 @@ describe("scheduleDraftForTask", () => {
     expect(scheduleFromDraft(scheduleDraftForTask({ schedule }))).toEqual(schedule);
   });
 
+  it("round-trips a one-off and rejects a missing run time", () => {
+    const schedule = { type: "once" as const, runAt: "2026-10-18T03:30:00.000Z" };
+    const draft = scheduleDraftForTask({ schedule });
+    expect(draft.mode).toBe("once");
+    expect(scheduleFromDraft(draft)).toEqual(schedule);
+    expect(scheduleFromDraft({ ...draft, runAt: "" })).toBeNull();
+  });
+
   it("round-trips a webhook schedule without a signature", () => {
     const draft = scheduleDraftForTask({ schedule: { type: "webhook", signature: null } });
     expect(draft.mode).toBe("webhook");

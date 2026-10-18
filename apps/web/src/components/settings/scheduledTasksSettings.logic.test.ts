@@ -5,6 +5,7 @@ import {
   type ServerConfig,
   ProviderInstanceId,
   ScheduledTaskId,
+  ThreadId,
   type ScheduledTask,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -21,6 +22,7 @@ import {
   matchesScheduledTaskScope,
   scheduleFromDraft,
   taskToDraft,
+  threadFollowUpDraft,
 } from "./scheduledTasksSettings.logic";
 
 const laptopId = EnvironmentId.make("laptop");
@@ -219,6 +221,45 @@ describe("webhook scheduled tasks", () => {
     for (const invalid of ["0", "-5", "1.5", "abc", "1441"]) {
       expect(scheduleFromDraft({ ...draft, maxDeliveryAgeMinutes: invalid })).toBeNull();
     }
+  });
+});
+
+describe("one-off scheduled tasks", () => {
+  it("round-trips the run instant through the local date-time field", () => {
+    const runAt = "2026-10-18T03:30:00.000Z";
+    const draft = taskToDraft({ ...legacyTask, schedule: { type: "once", runAt } });
+    expect(draft.scheduleMode).toBe("once");
+    expect(scheduleFromDraft(draft)).toEqual({ type: "once", runAt });
+    expect(scheduleFromDraft({ ...draft, runAt: "" })).toBeNull();
+  });
+
+  it("binds a follow-up to the thread with its model and modes", () => {
+    const modelSelection = { instanceId: ProviderInstanceId.make("claude"), model: "opus" };
+    const draft = threadFollowUpDraft(
+      taskToDraft(legacyTask),
+      {
+        id: ThreadId.make("thread-1"),
+        projectId: ProjectId.make("project-2"),
+        title: "Refactor",
+        modelSelection,
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+      },
+      new Date("2026-10-17T12:00:00.000Z"),
+    );
+    expect(draft).toMatchObject({
+      scheduleMode: "once",
+      threadId: "thread-1",
+      projectId: "project-2",
+      modelKey: "claude:opus",
+      baseModelSelection: modelSelection,
+      runtimeMode: "approval-required",
+      interactionMode: "plan",
+    });
+    expect(scheduleFromDraft(draft)).toEqual({
+      type: "once",
+      runAt: "2026-10-17T13:00:00.000Z",
+    });
   });
 });
 

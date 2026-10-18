@@ -4682,6 +4682,12 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "schedule-message":
+            void router.navigate({
+              to: "/settings/scheduled-tasks",
+              search: { environmentId: thread.environmentId, threadId: thread.id },
+            });
+            return;
           case "filter-by-project":
             // This item is the only scope control here, so picking the
             // already-scoped project again is the way back to all projects.

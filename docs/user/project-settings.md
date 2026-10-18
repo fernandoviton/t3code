@@ -62,7 +62,7 @@ branch name remains.
 
 ## Scheduled tasks on mobile
 
-Open **Settings → Scheduled tasks** to create recurring tasks or manage existing
+Open **Settings → Scheduled tasks** to create scheduled tasks or manage existing
 ones across your connected environments. Use the settings filter to narrow the
 list by environment or project. Each task runs on the environment you choose,
 using its project, model, and workspace settings. Fixed-time schedules use that
@@ -72,6 +72,20 @@ You can edit, pause, resume, run immediately, or delete a task from the list.
 Webhook tasks only run when their URL is called, so they can't be run
 immediately.
 Leaving an edited form asks before discarding unsaved changes.
+
+## One-off scheduled messages
+
+To send a prompt later, such as after your provider's usage limit resets,
+choose **Schedule message…** from a thread's menu in the sidebar or chat header.
+The task editor opens with **Once** selected and the thread chosen under **Run
+in**. Pick the date and time and write the prompt. When the time comes, the
+message is queued into that thread like any other follow-up, so it waits for a
+running turn to finish instead of interrupting it. To start a fresh thread
+instead, choose **A new thread each run**.
+
+A one-off runs a single time. If the environment was off at that moment, it
+runs as soon as the environment is back. After it runs, it stays in the list
+with its result. Edit it and pick a new time to run it again.
 
 ## Webhook automations
 

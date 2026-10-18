@@ -20,6 +20,7 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "schedule-message"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -168,6 +169,7 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
+    { id: "schedule-message", label: "Schedule message…", icon: "clock" },
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [

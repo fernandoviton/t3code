@@ -44,7 +44,9 @@ export function scheduledTaskDefaultModel(
 }
 
 export type ScheduleDraft = {
-  readonly mode: "fixed_time" | "interval" | "webhook";
+  readonly mode: "once" | "fixed_time" | "interval" | "webhook";
+  /** ISO instant a one-off runs at. */
+  readonly runAt: string;
   readonly timeOfDay: string;
   readonly weekdays: ReadonlyArray<number>;
   readonly intervalMinutes: string;
@@ -56,6 +58,7 @@ export type ScheduleDraft = {
 
 export const DEFAULT_SCHEDULE: ScheduleDraft = {
   mode: "fixed_time",
+  runAt: "",
   timeOfDay: "09:00",
   weekdays: [1, 2, 3, 4, 5],
   intervalMinutes: "15",
@@ -65,6 +68,8 @@ export const DEFAULT_SCHEDULE: ScheduleDraft = {
 
 export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): ScheduleDraft {
   switch (task.schedule.type) {
+    case "once":
+      return { ...DEFAULT_SCHEDULE, mode: "once", runAt: task.schedule.runAt };
     case "fixed_time":
       return {
         ...DEFAULT_SCHEDULE,
@@ -93,6 +98,9 @@ export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): Sch
 }
 
 export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSchedule | null {
+  if (draft.mode === "once") {
+    return Number.isFinite(Date.parse(draft.runAt)) ? { type: "once", runAt: draft.runAt } : null;
+  }
   if (draft.mode === "webhook") {
     const maxDeliveryAgeMinutes = parseMaxDeliveryAge(draft.maxDeliveryAgeMinutes);
     if (maxDeliveryAgeMinutes === undefined) return null;
@@ -159,6 +167,7 @@ function draftSignature(draft: ScheduledTaskDraft): string {
       .sort((a, b) => a.id.localeCompare(b.id))
       .map((option) => [option.id, option.value]),
     draft.schedule.mode,
+    draft.schedule.runAt,
     draft.schedule.timeOfDay,
     [...draft.schedule.weekdays].sort((a, b) => a - b),
     draft.schedule.intervalMinutes,

@@ -196,6 +196,12 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "schedule-message":
+            void router.navigate({
+              to: "/settings/scheduled-tasks",
+              search: { environmentId: thread.environmentId, threadId: thread.id },
+            });
+            return;
           case "project-settings": {
             const project = projects.find(
               (candidate) =>

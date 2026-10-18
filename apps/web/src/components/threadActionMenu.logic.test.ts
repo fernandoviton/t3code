@@ -55,6 +55,7 @@ describe("buildThreadActionMenuItems", () => {
             "unpin",
             "unsettle",
             "unsnooze",
+            "schedule-message",
             "rename",
             "regenerate-title",
             "auto-settle",
@@ -65,6 +66,7 @@ describe("buildThreadActionMenuItems", () => {
             "pin",
             "settle",
             "snooze",
+            "schedule-message",
             "rename",
             "regenerate-title",
             "auto-settle",
@@ -103,7 +105,15 @@ describe("buildThreadActionMenuItems", () => {
           titleRegeneration: false,
         },
       }),
-    ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
+    ).toEqual([
+      "schedule-message",
+      "rename",
+      "mark-unread",
+      "copy",
+      "project-settings",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("groups project settings with utility actions before archive", () => {

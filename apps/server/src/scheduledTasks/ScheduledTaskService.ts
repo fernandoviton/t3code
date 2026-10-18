@@ -285,6 +285,14 @@ function nextRunAt(
   }
 }
 
+/** A run, even a manual one ahead of its time, uses up a one-off. */
+function nextRunAfterRun(
+  task: Pick<ScheduledTask, "enabled" | "schedule">,
+  from: DateTime.DateTime,
+): string | null {
+  return task.schedule.type === "once" ? null : nextRunAt(task, from);
+}
+
 function errorMessage(error: unknown): string {
   if (Cause.isCause(error)) return Cause.pretty(error);
   if (error instanceof Error) return error.message;
@@ -692,7 +700,7 @@ export const layer = Layer.effect(
           UPDATE scheduled_tasks
           SET last_run_status = 'failed',
               last_run_error = ${message},
-              next_run_at = ${nextRunAt(source, now)},
+              next_run_at = ${nextRunAfterRun(source, now)},
               updated_at = ${iso(now)},
               run_count = run_count + 1
           WHERE task_id = ${task.id} AND last_run_status = 'running'
@@ -842,7 +850,7 @@ export const layer = Layer.effect(
           ...scheduleSource,
           updatedAt: iso(completedAt),
           lastRunAt: startedAtIso,
-          nextRunAt: nextRunAt(scheduleSource, completedAt),
+          nextRunAt: nextRunAfterRun(scheduleSource, completedAt),
           lastRunStatus,
           lastRunError,
           runCount: scheduleSource.runCount + 1,
@@ -945,7 +953,7 @@ export const layer = Layer.effect(
                 UPDATE scheduled_tasks
                 SET last_run_status = 'failed',
                     last_run_error = 'Run was interrupted by a server restart.',
-                    next_run_at = ${nextRunAt(decoded.success, now)},
+                    next_run_at = ${nextRunAfterRun(decoded.success, now)},
                     updated_at = ${iso(now)},
                     run_count = run_count + 1
                 WHERE task_id IS ${row.task_id} AND last_run_status = 'running'
@@ -1080,6 +1088,15 @@ export const layer = Layer.effect(
           existingTask !== null &&
           existingTask.enabled === input.enabled &&
           isSameSchedule(existingTask.schedule, schedule);
+        if (schedule.type === "once" && input.enabled && !scheduleUnchanged) {
+          const runAtMs = Date.parse(schedule.runAt);
+          if (!Number.isFinite(runAtMs)) {
+            return yield* taskError("Run time must be a valid date and time.", { taskId: id });
+          }
+          if (runAtMs <= DateTime.toEpochMillis(now)) {
+            return yield* taskError("Run time must be in the future.", { taskId: id });
+          }
+        }
         const task: ScheduledTask = {
           id,
           title: input.title,
